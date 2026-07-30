@@ -1,9 +1,9 @@
-import HomeClient from "@/components/home/HomeClient";
+import GameArena from "@/components/game/GameArena";
 import { getGalleryPhotos } from "@/lib/photos";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
+export default async function GamePage() {
   const photos = await getGalleryPhotos();
-  return <HomeClient photos={photos} />;
+  return <GameArena photos={photos} />;
 }

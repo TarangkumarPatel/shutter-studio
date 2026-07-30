@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -39,3 +40,21 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/src/generated/prisma
+
+# sqlite database
+/prisma/dev.db
+/prisma/dev.db-journal
+
+# uploaded photos (local storage) — keep folder structure, ignore contents
+/public/uploads/**
+!/public/uploads/web
+!/public/uploads/originals
+!/public/uploads/**/.gitkeep
+
+# AI coding tool artifacts — local session state/caches, not app code
+/.claude/
+/.agents/
+/.windsurf/
+/skills-lock.json

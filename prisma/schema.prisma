@@ -1,0 +1,72 @@
+// Prisma schema — photography portfolio.
+// Swapping storage backends (S3/Cloudinary) later only touches lib/storage.ts —
+// storageKey/originalKey below are provider-agnostic string keys, not paths.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Photo {
+  id          String  @id @default(cuid())
+  title       String?
+  description String?
+
+  storageKey  String // web-optimized image, e.g. "/uploads/web/abc123.webp"
+  originalKey String // full-quality original, e.g. "/uploads/originals/abc123.jpg"
+  width       Int // width of the web-optimized image
+  height      Int // height of the web-optimized image
+  blurDataUrl String // base64 tiny placeholder for next/image blur-up
+
+  likeCount Int      @default(0)
+  order     Int      @default(0) // manual admin-curated position in the gallery (drag-and-drop)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  likes    Like[]
+  comments Comment[]
+
+  @@index([likeCount])
+  @@index([createdAt])
+  @@index([order])
+}
+
+model Like {
+  id        String   @id @default(cuid())
+  photoId   String
+  photo     Photo    @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  clientId  String // id generated client-side, persisted in localStorage
+  ipHash    String // sha256(ip + salt) — soft server-side dedupe, never raw IP
+  createdAt DateTime @default(now())
+
+  @@unique([photoId, clientId])
+  @@index([photoId, ipHash])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  photoId   String
+  photo     Photo    @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  name      String
+  text      String
+  ipHash    String
+  createdAt DateTime @default(now())
+
+  @@index([photoId])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  message   String
+  ipHash    String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
