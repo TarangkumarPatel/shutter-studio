@@ -1,5 +1,6 @@
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { put, del } from "@vercel/blob";
 
 /**
  * Storage abstraction so the rest of the app never touches the filesystem
@@ -54,4 +55,28 @@ export function storageKeyToFilePath(publicPath: string): string {
   return path.join(PUBLIC_DIR, safeKey);
 }
 
-export const storage: StorageAdapter = new LocalStorageAdapter();
+/**
+ * Vercel's serverless functions have a read-only filesystem outside `/tmp` —
+ * writing to `public/uploads` at runtime (every admin upload) fails outright
+ * in production there, so this adapter backs onto Vercel Blob instead.
+ * `save()` returns Blob's full public URL, which becomes the stored
+ * `storageKey`/`originalKey` (see the `http` check in the game judge route,
+ * which needs to fetch these over HTTP rather than read them off local disk).
+ */
+class VercelBlobStorageAdapter implements StorageAdapter {
+  async save(key: string, buffer: Buffer): Promise<string> {
+    const blob = await put(key, buffer, { access: "public", addRandomSuffix: false });
+    return blob.url;
+  }
+
+  async delete(key: string): Promise<void> {
+    await del(key);
+  }
+}
+
+// Vercel auto-injects BLOB_READ_WRITE_TOKEN once a Blob store is connected to
+// the project — its presence is what decides which adapter is active, so
+// local dev keeps using local disk unless that token is deliberately pulled.
+export const storage: StorageAdapter = process.env.BLOB_READ_WRITE_TOKEN
+  ? new VercelBlobStorageAdapter()
+  : new LocalStorageAdapter();

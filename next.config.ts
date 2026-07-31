@@ -1,10 +1,16 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // sharp ships native binaries — keep it out of the server bundle so
+  // Vercel's build traces/copies the right platform binary rather than
+  // webpack/Turbopack trying to bundle it.
+  serverExternalPackages: ["sharp"],
   images: {
-    // Local uploads only for now — add remotePatterns here if/when photo
-    // storage moves to S3/Cloudinary.
     qualities: [65, 75, 85, 90],
+    remotePatterns: [
+      // Vercel Blob public storage (see src/lib/storage.ts).
+      { protocol: "https", hostname: "*.public.blob.vercel-storage.com" },
+    ],
   },
 };
 

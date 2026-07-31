@@ -40,7 +40,7 @@ A cinematic, award-agency-style photography portfolio — built with Next.js 16
 | Styling                | Tailwind CSS v4                                                 |
 | Animation              | Framer Motion (orchestration/UI) + GSAP (lens aperture timeline) |
 | Database               | Postgres (Neon) via Prisma ORM — SQLite also works for local-only dev, see below |
-| Image storage          | Local disk (`/public/uploads`) behind a storage adapter — see [Swapping to S3/Cloudinary](#swapping-to-s3cloudinary) |
+| Image storage          | Vercel Blob in production, local disk in dev — see [Photo storage](#photo-storage) |
 | Image processing       | `sharp` (resize, WebP compression, blur placeholder)             |
 | AI judge               | `@google/genai`, `gemini-2.5-flash` (vision) — free tier, no billing required |
 | Smooth scroll          | Lenis                                                            |
@@ -217,9 +217,13 @@ client-side JavaScript.
 
 ---
 
-## Swapping to S3/Cloudinary
+## Photo storage
 
-Image storage is behind a small interface (`src/lib/storage.ts`):
+Local disk works fine for local dev, but **Vercel's serverless functions
+have a read-only filesystem outside `/tmp`** — writing to `public/uploads`
+at runtime (every admin upload) fails outright once deployed there. Image
+storage is behind a small interface for exactly this reason
+(`src/lib/storage.ts`):
 
 ```ts
 export interface StorageAdapter {
@@ -228,19 +232,22 @@ export interface StorageAdapter {
 }
 ```
 
-Everything else in the app (upload route, image processing, `next/image`
-rendering) only ever deals in the returned "key"/URL — never a local file
-path directly. To move to S3 or Cloudinary:
+**On Vercel**, this is already handled: `storage.ts` automatically uses
+**Vercel Blob** instead of local disk whenever `BLOB_READ_WRITE_TOKEN` is
+present (auto-injected once you connect a Blob store to the project —
+Storage → Create → Blob → Connect Project, same flow as the Neon database).
+Nothing else to configure; `next.config.ts` already allows
+`*.public.blob.vercel-storage.com` for `next/image`, and the game judge
+route already fetches portfolio images over HTTP when `storageKey` is a
+full URL rather than reading them off local disk.
+
+**To use S3/Cloudinary instead** (e.g. deploying elsewhere, or wanting a
+CDN in front of the images):
 
 1. Write a new class implementing `StorageAdapter` (e.g. `S3StorageAdapter`)
    that uploads to your bucket/account and returns the public URL.
-2. Swap the `export const storage: StorageAdapter = new LocalStorageAdapter();`
-   line at the bottom of `storage.ts` to your new class.
-3. Add your bucket/CDN hostname to `images.remotePatterns` in `next.config.ts`
-   so `next/image` will optimize remote URLs.
-4. `src/app/api/game/judge/route.ts` currently reads portfolio images off
-   local disk (`storageKeyToFilePath`) to base64-encode them for Gemini's
-   vision API — swap that one read for an HTTP fetch of the stored URL.
+2. Update the `storage` export at the bottom of `storage.ts` to select it.
+3. Add your bucket/CDN hostname to `images.remotePatterns` in `next.config.ts`.
 
 ## Switching database providers
 
@@ -279,19 +286,12 @@ Postgres, SQLite, MySQL, etc. is just:
 
 ## Deployment
 
-### Option A — Vercel (recommended for the simplest path, with one caveat)
+### Option A — Vercel (recommended)
 
-The database is already sorted (Postgres via Neon, see above) — Vercel's
-**ephemeral filesystem** only bites for `/public/uploads`. Anything written
-there at runtime (i.e. every admin upload) disappears on the next deploy or
-cold start. Two ways to handle this on Vercel:
-
-1. **Swap to S3/Cloudinary before deploying** (see above) — the recommended
-   path if you intend to keep uploading new photos in production. Storage
-   becomes durable and you get a CDN for free.
-2. **Ship your photos as part of the repo/build** (upload locally in dev,
-   commit the resulting `/public/uploads`, don't use `/admin` in production)
-   — fine for a mostly-static portfolio that rarely changes.
+The database is already sorted (Postgres via Neon, see above), and photo
+storage auto-switches to Vercel Blob in production (see
+[Photo storage](#photo-storage)) — just connect a Blob store the same way
+you connected Neon.
 
 Steps:
 
@@ -299,14 +299,14 @@ Steps:
 vercel
 ```
 
-In the Vercel dashboard, connect your Neon database to the project
-(**Storage → your database → Connect Project** — this injects
-`DATABASE_URL`/`DATABASE_URL_UNPOOLED` automatically), then set
-`ADMIN_PASSWORD`, `SESSION_SECRET`, and `GEMINI_API_KEY` yourself under
-**Settings → Environment Variables**. `npx prisma migrate deploy` needs to
-run against the production database before first use — either run it
-locally with `DATABASE_URL` pointed at production, or wire it into your
-build step.
+In the Vercel dashboard, connect your Neon database (**Storage → your
+database → Connect Project** — injects `DATABASE_URL`/`DATABASE_URL_UNPOOLED`)
+and a Blob store (**Storage → Create → Blob → Connect Project** — injects
+`BLOB_READ_WRITE_TOKEN`), then set `ADMIN_PASSWORD`, `SESSION_SECRET`, and
+`GEMINI_API_KEY` yourself under **Settings → Environment Variables**.
+`npx prisma migrate deploy` needs to run against the production database
+before first use — either run it locally with `DATABASE_URL` pointed at
+production, or wire it into your build step.
 
 ### Option B — A VPS (simplest for local file storage, no code changes needed)
 

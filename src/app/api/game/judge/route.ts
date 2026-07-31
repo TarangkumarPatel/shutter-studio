@@ -20,7 +20,13 @@ async function loadPortfolioImage(photoId: string): Promise<JudgeImageInput> {
   if (!photo) {
     throw new JudgeError("One of the selected portfolio photos no longer exists.", "api");
   }
-  const buffer = await readFile(storageKeyToFilePath(photo.storageKey));
+
+  // storageKey is a full URL when photos live in Vercel Blob, or a local
+  // "/uploads/..." path when they live on disk (see src/lib/storage.ts).
+  const buffer = photo.storageKey.startsWith("http")
+    ? Buffer.from(await (await fetch(photo.storageKey)).arrayBuffer())
+    : await readFile(storageKeyToFilePath(photo.storageKey));
+
   return {
     base64: buffer.toString("base64"),
     mediaType: "image/webp",
