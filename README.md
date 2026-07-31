@@ -174,10 +174,13 @@ no cron job or cache to keep in sync.
 
 - **Likes**: one per photo per browser, enforced via a `clientId` generated
   client-side and persisted in `localStorage`, unique-constrained against
-  `photoId` in the database. A soft server-side IP check (`Like.ipHash`, via
-  a salted hash — the raw IP is never stored) additionally caps likes per
-  photo per network to guard against `localStorage`-clearing abuse, without
-  hard-blocking shared networks (offices, NAT, campus wifi).
+  `photoId` in the database. Toggleable — liking again after unliking is just
+  `POST`/`DELETE` on the same `(photoId, clientId)` pair
+  (`src/app/api/photos/[id]/like/route.ts`). A soft server-side IP check
+  (`Like.ipHash`, via a salted hash — the raw IP is never stored)
+  additionally caps likes per photo per network to guard against
+  `localStorage`-clearing abuse, without hard-blocking shared networks
+  (offices, NAT, campus wifi).
 - **Comments**: no account required — just a display name + text. Sanitized
   server-side with `sanitize-html` (all markup stripped) and rate-limited
   per IP (5 comments / 10 minutes) via an in-memory limiter in
@@ -185,6 +188,11 @@ no cron job or cache to keep in sync.
   server/VPS deployment, but swap it for a shared store (e.g. Upstash Redis)
   behind the same `checkRateLimit()` signature if you deploy multiple
   instances.
+- **Edit/delete your own comment**: comments store the same `clientId` as
+  likes (nullable — comments predating this can't be claimed by anyone).
+  `PATCH`/`DELETE /api/comments/[id]` require the request's `clientId` to
+  match the comment's before allowing the change; the admin's own delete
+  path (cookie auth) is unaffected and still works unconditionally.
 
 ### Admin auth
 

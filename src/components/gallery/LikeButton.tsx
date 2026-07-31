@@ -2,7 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { getLikedPhotoIds, getOrCreateClientId, markPhotoLiked } from "@/lib/clientId";
+import {
+  getLikedPhotoIds,
+  getOrCreateClientId,
+  markPhotoLiked,
+  unmarkPhotoLiked,
+} from "@/lib/clientId";
 
 const BURST_PARTICLES = 8;
 
@@ -32,28 +37,35 @@ export default function LikeButton({
   );
 
   async function handleClick() {
-    if (liked || pending) return;
+    if (pending) return;
     setPending(true);
     setError(null);
-    setLiked(true);
-    setLikeCount((c) => c + 1);
-    setBurstKey((k) => k + 1);
-    markPhotoLiked(photoId);
+
+    // Toggle: unlike if already liked, otherwise like — both optimistic.
+    const wasLiked = liked;
+    setLiked(!wasLiked);
+    setLikeCount((c) => Math.max(0, c + (wasLiked ? -1 : 1)));
+    if (wasLiked) {
+      unmarkPhotoLiked(photoId);
+    } else {
+      setBurstKey((k) => k + 1);
+      markPhotoLiked(photoId);
+    }
 
     try {
       const res = await fetch(`/api/photos/${photoId}/like`, {
-        method: "POST",
+        method: wasLiked ? "DELETE" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clientId: getOrCreateClientId() }),
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error ?? "Couldn't like this photo.");
+        throw new Error(data.error ?? "Couldn't update your like.");
       }
       setLikeCount(data.likeCount);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
-      // Keep the optimistic liked state — it's a soft failure, not worth reverting the UI.
+      // Keep the optimistic state — it's a soft failure, not worth reverting the UI.
     } finally {
       setPending(false);
     }
@@ -64,9 +76,9 @@ export default function LikeButton({
       <button
         type="button"
         onClick={handleClick}
-        disabled={liked}
+        disabled={pending}
         aria-pressed={liked}
-        aria-label={liked ? "Liked" : "Like this photo"}
+        aria-label={liked ? "Unlike this photo" : "Like this photo"}
         className="relative flex items-center justify-center w-11 h-11 rounded-full border border-(--color-border) bg-(--color-bg-elevated)/60 hover:border-(--color-accent-dim) transition-colors disabled:cursor-default"
       >
         <motion.svg

@@ -56,7 +56,12 @@ model Comment {
   name      String
   text      String
   ipHash    String
+  // Nullable for comments predating this field — the edit/delete-your-own-
+  // comment feature only works when this is set (always true for new
+  // comments, since the client always sends its localStorage clientId).
+  clientId  String?
   createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
   @@index([photoId])
 }

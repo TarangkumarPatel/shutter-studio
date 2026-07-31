@@ -62,3 +62,41 @@ export async function POST(
 
   return NextResponse.json({ alreadyLiked: false, likeCount: updatedPhoto.likeCount });
 }
+
+/** Retracts a like — the inverse of POST above, keyed by the same (photoId, clientId) pair. */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id: photoId } = await params;
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+  }
+
+  const clientId = (body as { clientId?: unknown })?.clientId;
+  if (typeof clientId !== "string" || clientId.length < 8 || clientId.length > 128) {
+    return NextResponse.json({ error: "Missing or invalid clientId." }, { status: 400 });
+  }
+
+  const existing = await prisma.like.findUnique({
+    where: { photoId_clientId: { photoId, clientId } },
+  });
+  if (!existing) {
+    const current = await prisma.photo.findUnique({
+      where: { id: photoId },
+      select: { likeCount: true },
+    });
+    return NextResponse.json({ likeCount: current?.likeCount ?? 0 });
+  }
+
+  const [, updatedPhoto] = await prisma.$transaction([
+    prisma.like.delete({ where: { photoId_clientId: { photoId, clientId } } }),
+    prisma.photo.update({ where: { id: photoId }, data: { likeCount: { decrement: 1 } } }),
+  ]);
+
+  return NextResponse.json({ likeCount: updatedPhoto.likeCount });
+}

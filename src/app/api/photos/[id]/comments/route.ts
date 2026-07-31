@@ -49,14 +49,16 @@ export async function POST(
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  const parsed = body as { name?: unknown; text?: unknown };
+  const parsed = body as { name?: unknown; text?: unknown; clientId?: unknown };
   const result = validateCommentInput(parsed.name, parsed.text);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
 
+  const clientId = typeof parsed.clientId === "string" ? parsed.clientId : null;
+
   const comment = await prisma.comment.create({
-    data: { photoId, name: result.name, text: result.text, ipHash },
+    data: { photoId, name: result.name, text: result.text, ipHash, clientId },
   });
 
   return NextResponse.json({ comment: toCommentDTO(comment) }, { status: 201 });
