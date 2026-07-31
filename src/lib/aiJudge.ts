@@ -1,6 +1,11 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
 
-const MODEL = "claude-sonnet-4-6";
+// "gemini-flash-latest" is a Google-maintained alias that always resolves to
+// their current recommended flash model — pinning a specific version (e.g.
+// "gemini-2.5-flash") is risky, since Google rotates which versions are
+// available to new API keys/projects quite aggressively. Free tier, no
+// billing required. See https://ai.google.dev/gemini-api/docs/models.
+const MODEL = "gemini-flash-latest";
 
 export interface JudgeImageInput {
   base64: string;
@@ -32,45 +37,42 @@ composition, lighting, subject matter, emotional impact, technical execution
 
 You will be shown two photographs, Photo A and Photo B. Score each out of 100,
 write a 2-3 sentence critique for each explaining the score, and declare a
-winner with a one-line verdict.
+winner with a one-line verdict.`;
 
-Respond with ONLY a single JSON object, no markdown code fences, no
-commentary before or after, matching exactly this shape:
+const RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    photoA: {
+      type: "object",
+      properties: {
+        score: { type: "integer" },
+        critique: { type: "string" },
+      },
+      required: ["score", "critique"],
+    },
+    photoB: {
+      type: "object",
+      properties: {
+        score: { type: "integer" },
+        critique: { type: "string" },
+      },
+      required: ["score", "critique"],
+    },
+    winner: { type: "string", enum: ["A", "B", "tie"] },
+    verdict: { type: "string" },
+  },
+  required: ["photoA", "photoB", "winner", "verdict"],
+} as const;
 
-{
-  "photoA": { "score": <integer 0-100>, "critique": "<2-3 sentences>" },
-  "photoB": { "score": <integer 0-100>, "critique": "<2-3 sentences>" },
-  "winner": "A" | "B" | "tie",
-  "verdict": "<one punchy sentence announcing the winner and why>"
-}`;
-
-function getClient(): Anthropic {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+function getClient(): GoogleGenAI {
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new JudgeError(
-      "The AI judge isn't configured yet — ANTHROPIC_API_KEY is missing on the server.",
+      "The AI judge isn't configured yet — GEMINI_API_KEY is missing on the server.",
       "config",
     );
   }
-  return new Anthropic({ apiKey });
-}
-
-function extractJson(text: string): unknown {
-  const trimmed = text.trim();
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    const start = trimmed.indexOf("{");
-    const end = trimmed.lastIndexOf("}");
-    if (start !== -1 && end !== -1 && end > start) {
-      try {
-        return JSON.parse(trimmed.slice(start, end + 1));
-      } catch {
-        // fall through
-      }
-    }
-  }
-  throw new JudgeError("The judge's response wasn't valid JSON.", "parse");
+  return new GoogleGenAI({ apiKey });
 }
 
 function isValidVerdict(value: unknown): value is JudgeVerdict {
@@ -102,52 +104,54 @@ export async function judgePhotoPair(
 
   let response;
   try {
-    response = await client.messages.create({
+    response = await client.models.generateContent({
       model: MODEL,
-      max_tokens: 1024,
-      system: JUDGE_SYSTEM_PROMPT,
-      messages: [
+      contents: [
         {
           role: "user",
-          content: [
-            { type: "text", text: `Photo A (${photoA.label}):` },
-            {
-              type: "image",
-              source: { type: "base64", media_type: photoA.mediaType, data: photoA.base64 },
-            },
-            { type: "text", text: `Photo B (${photoB.label}):` },
-            {
-              type: "image",
-              source: { type: "base64", media_type: photoB.mediaType, data: photoB.base64 },
-            },
-            {
-              type: "text",
-              text: "Judge these two photographs now. Respond with only the JSON object described in your instructions.",
-            },
+          parts: [
+            { text: `Photo A (${photoA.label}):` },
+            { inlineData: { mimeType: photoA.mediaType, data: photoA.base64 } },
+            { text: `Photo B (${photoB.label}):` },
+            { inlineData: { mimeType: photoB.mediaType, data: photoB.base64 } },
+            { text: "Judge these two photographs now." },
           ],
         },
       ],
+      config: {
+        systemInstruction: JUDGE_SYSTEM_PROMPT,
+        responseMimeType: "application/json",
+        responseSchema: RESPONSE_SCHEMA,
+      },
     });
   } catch (err) {
-    if (err instanceof Anthropic.APIError) {
-      throw new JudgeError(`The judge is unavailable right now (${err.message}).`, "api");
-    }
-    throw new JudgeError("The judge is unavailable right now.", "api");
+    throw new JudgeError(
+      `The judge is unavailable right now (${err instanceof Error ? err.message : "unknown error"}).`,
+      "api",
+    );
   }
 
-  if (response.stop_reason === "refusal") {
+  const candidate = response.candidates?.[0];
+  const blockReason = response.promptFeedback?.blockReason;
+  if (blockReason || (candidate && candidate.finishReason === "SAFETY")) {
     throw new JudgeError(
       "The judge declined to evaluate these images. Try a different pair.",
       "refusal",
     );
   }
 
-  const textBlock = response.content.find((block) => block.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
+  const text = response.text;
+  if (!text) {
     throw new JudgeError("The judge returned an empty response.", "parse");
   }
 
-  const parsed = extractJson(textBlock.text);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new JudgeError("The judge's response wasn't valid JSON.", "parse");
+  }
+
   if (!isValidVerdict(parsed)) {
     throw new JudgeError("The judge's response was malformed.", "parse");
   }

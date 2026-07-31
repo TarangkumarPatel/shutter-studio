@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import { prisma } from "@/lib/prisma";
 import { storageKeyToFilePath } from "@/lib/storage";
-import { judgePhotoPair, JudgeError, type JudgeImageInput } from "@/lib/claude";
+import { judgePhotoPair, JudgeError, type JudgeImageInput } from "@/lib/aiJudge";
 import { getClientIp, hashIp } from "@/lib/ip";
 import { checkRateLimit } from "@/lib/rateLimit";
 import type { GameJudgeRequest } from "@/types";

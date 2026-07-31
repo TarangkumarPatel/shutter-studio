@@ -1,8 +1,8 @@
 # Shutter Studio
 
 A cinematic, award-agency-style photography portfolio — built with Next.js 16
-(App Router), TypeScript, Tailwind CSS, Framer Motion + GSAP, Prisma/SQLite,
-and the Claude API.
+(App Router), TypeScript, Tailwind CSS, Framer Motion + GSAP, Prisma/Postgres
+(Neon), and the Google Gemini API (free tier).
 
 - **Cinematic intro** — a camera photo flies in from off-frame with a
   rotation, a viewfinder HUD slides open ("LIGHTS → CAMERA → SHOOT"
@@ -39,10 +39,10 @@ and the Claude API.
 | Language               | TypeScript                                                     |
 | Styling                | Tailwind CSS v4                                                 |
 | Animation              | Framer Motion (orchestration/UI) + GSAP (lens aperture timeline) |
-| Database               | SQLite via Prisma ORM (see [Swapping to Postgres/Supabase](#swapping-to-postgressupabase) below) |
+| Database               | Postgres (Neon) via Prisma ORM — SQLite also works for local-only dev, see below |
 | Image storage          | Local disk (`/public/uploads`) behind a storage adapter — see [Swapping to S3/Cloudinary](#swapping-to-s3cloudinary) |
 | Image processing       | `sharp` (resize, WebP compression, blur placeholder)             |
-| AI judge               | `@anthropic-ai/sdk`, `claude-sonnet-4-6` (vision)                 |
+| AI judge               | `@google/genai`, `gemini-2.5-flash` (vision) — free tier, no billing required |
 | Smooth scroll          | Lenis                                                            |
 
 ---
@@ -63,25 +63,33 @@ Copy `.env.example` to `.env` and fill in real values:
 cp .env.example .env
 ```
 
-| Variable            | Required | Description                                                                 |
-| -------------------- | -------- | ----------------------------------------------------------------------------- |
-| `DATABASE_URL`        | Yes      | SQLite file path. Default `file:./dev.db` works out of the box.                |
-| `ADMIN_PASSWORD`      | Yes      | Password for `/admin`. Checked server-side only — never sent to the client.     |
-| `SESSION_SECRET`      | Yes      | Random string used to sign the admin session cookie. Generate one with `openssl rand -hex 32`. |
-| `ANTHROPIC_API_KEY`   | Yes, for `/game` | Your Anthropic API key. Without it, `/game` returns a friendly "judge isn't configured" error — the rest of the site works fine. |
+| Variable         | Required | Value                                                    |
+| ----------------- | -------- | ----------------------------------------------------------- |
+| `DATABASE_URL`     | Yes      | `file:./dev.db` works out of the box locally.                |
+| `ADMIN_PASSWORD`   | Yes      | Password for `/admin` (server-side only).                    |
+| `SESSION_SECRET`   | Yes      | Random string, e.g. `openssl rand -hex 32`.                   |
+| `GEMINI_API_KEY`   | For `/game` | Free key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey). Without it, `/game` shows a "judge isn't configured" message — the rest of the site is unaffected. |
 
 ### 3. Set up the database
 
+`DATABASE_URL`/`DATABASE_URL_UNPOOLED` should point at a Postgres database —
+a free [Neon](https://neon.tech) project works well and is what this repo is
+configured for (`prisma/schema.prisma` uses `directUrl` for migrations, so
+grab both the pooled and unpooled connection strings from Neon/Vercel's
+Storage tab). Prefer to skip provisioning a database for quick local
+experiments? Point `DATABASE_URL` at `file:./dev.db` and change
+`provider = "postgresql"` to `"sqlite"` in `prisma/schema.prisma` instead —
+just note you'll get your own migration history either way.
+
 ```bash
-npx prisma migrate dev   # creates prisma/dev.db and applies the schema
+npx prisma migrate dev   # applies the schema to your database
 npm run db:seed          # seeds 8 procedurally-generated placeholder photos
 ```
 
 The seed script draws its placeholder images with `sharp` (gradients +
 abstract shapes) — no external downloads, no licensing questions, works
 completely offline. Swap them for real photos any time via `/admin`; the
-seed script skips itself if the `Photo` table already has rows (delete
-`prisma/dev.db` to reseed from scratch).
+seed script skips itself if the `Photo` table already has rows.
 
 ### 4. Run the dev server
 
@@ -91,7 +99,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000). Visit `/admin` and log
 in with `ADMIN_PASSWORD` to upload/manage photos, and `/game` to try the AI
-face-off (requires `ANTHROPIC_API_KEY`).
+face-off (requires `GEMINI_API_KEY`).
 
 ### Other useful scripts
 
@@ -127,7 +135,7 @@ src/
   lib/
     storage.ts                # local-disk storage adapter (swap target for S3/Cloudinary)
     image.ts                   # sharp processing pipeline
-    claude.ts                   # Anthropic vision judge
+    aiJudge.ts                   # Gemini vision judge
     messages.ts                  # contact-message queries
     auth.ts, ip.ts, rateLimit.ts, sanitize.ts, sorting.ts, photos.ts, …
 public/
@@ -197,11 +205,12 @@ client-side JavaScript.
   disk or the database, and the API route (`src/app/api/game/judge/route.ts`)
   discards it as soon as the response is sent. This is stated on the page
   itself, not just here.
-- Claude (`claude-sonnet-4-6`, vision) is prompted to act as a professional
-  photography judge and return strict JSON — score /100, a 2–3 sentence
-  critique, and a winner + one-line verdict — for both photos
-  (`src/lib/claude.ts`). Malformed responses, refusals, and API errors are
-  all caught and surfaced as a themed error state rather than a crash.
+- Gemini (`gemini-2.5-flash`, vision) is prompted to act as a professional
+  photography judge and returns structured JSON (via Gemini's native
+  `responseSchema` support) — score /100, a 2–3 sentence critique, and a
+  winner + one-line verdict — for both photos (`src/lib/aiJudge.ts`).
+  Malformed responses, refusals, and API errors are all caught and surfaced
+  as a themed error state rather than a crash.
 - While waiting, a "developing film" loader cycles through judge-themed
   status lines; results reveal with animated score counters, a typewriter
   critique, a spotlight on the winner, and confetti.
@@ -230,20 +239,23 @@ path directly. To move to S3 or Cloudinary:
 3. Add your bucket/CDN hostname to `images.remotePatterns` in `next.config.ts`
    so `next/image` will optimize remote URLs.
 4. `src/app/api/game/judge/route.ts` currently reads portfolio images off
-   local disk (`storageKeyToFilePath`) to base64-encode them for Claude's
+   local disk (`storageKeyToFilePath`) to base64-encode them for Gemini's
    vision API — swap that one read for an HTTP fetch of the stored URL.
 
-## Swapping to Postgres/Supabase
+## Switching database providers
 
-The schema (`prisma/schema.prisma`) is provider-agnostic — models don't use
-any SQLite-specific types. To move to Postgres/Supabase:
+The schema doesn't use any provider-specific types, so moving between
+Postgres, SQLite, MySQL, etc. is just:
 
-1. Change `datasource db { provider = "sqlite" }` to `provider = "postgresql"`.
-2. Set `DATABASE_URL` to your Postgres/Supabase connection string.
+1. Change `datasource db { provider = "..." }` in `prisma/schema.prisma`
+   (currently `"postgresql"`; drop the `directUrl` line if your new provider
+   has no pooled/unpooled distinction).
+2. Point `DATABASE_URL` (and `DATABASE_URL_UNPOOLED`, if applicable) at the
+   new database.
 3. Run `npx prisma migrate dev` to generate a fresh migration against the new
-   provider (SQLite and Postgres migrations aren't interchangeable, so this
-   effectively starts migration history over — fine for a project this
-   size).
+   provider — migration histories aren't interchangeable across providers,
+   so this effectively starts migration history over (fine for a project
+   this size).
 
 ---
 
@@ -269,22 +281,17 @@ any SQLite-specific types. To move to Postgres/Supabase:
 
 ### Option A — Vercel (recommended for the simplest path, with one caveat)
 
-Vercel's serverless functions have an **ephemeral filesystem** — anything
-written to `/public/uploads` at runtime (i.e. every admin upload) will
-disappear on the next deploy or cold start. Two ways to handle this on
-Vercel:
+The database is already sorted (Postgres via Neon, see above) — Vercel's
+**ephemeral filesystem** only bites for `/public/uploads`. Anything written
+there at runtime (i.e. every admin upload) disappears on the next deploy or
+cold start. Two ways to handle this on Vercel:
 
 1. **Swap to S3/Cloudinary before deploying** (see above) — the recommended
    path if you intend to keep uploading new photos in production. Storage
    becomes durable and you get a CDN for free.
 2. **Ship your photos as part of the repo/build** (upload locally in dev,
-   commit the resulting `/public/uploads` + seeded DB, don't use `/admin` in
-   production) — fine for a mostly-static portfolio that rarely changes.
-
-Either way, also move the SQLite database off the serverless filesystem for
-the same reason — either switch to Postgres/Supabase (see above; Vercel
-Postgres or Supabase both work well), or, if you want to keep SQLite, use a
-provider with a persistent-disk SQLite offering (e.g. Turso/libSQL).
+   commit the resulting `/public/uploads`, don't use `/admin` in production)
+   — fine for a mostly-static portfolio that rarely changes.
 
 Steps:
 
@@ -292,10 +299,14 @@ Steps:
 vercel
 ```
 
-Set `ADMIN_PASSWORD`, `SESSION_SECRET`, `ANTHROPIC_API_KEY`, and `DATABASE_URL`
-as environment variables in the Vercel dashboard, then run
-`npx prisma migrate deploy` (via a build step or manually against the
-production database) before first use.
+In the Vercel dashboard, connect your Neon database to the project
+(**Storage → your database → Connect Project** — this injects
+`DATABASE_URL`/`DATABASE_URL_UNPOOLED` automatically), then set
+`ADMIN_PASSWORD`, `SESSION_SECRET`, and `GEMINI_API_KEY` yourself under
+**Settings → Environment Variables**. `npx prisma migrate deploy` needs to
+run against the production database before first use — either run it
+locally with `DATABASE_URL` pointed at production, or wire it into your
+build step.
 
 ### Option B — A VPS (simplest for local file storage, no code changes needed)
 
