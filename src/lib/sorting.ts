@@ -5,17 +5,22 @@ export function isNewPhoto(createdAt: Date, now: number = Date.now()): boolean {
 }
 
 /**
- * Sorting rule: pinned photos always come first, regardless of order. Within
- * each tier (pinned / not), gallery order is manually curated by the admin
- * (drag-and-drop in /admin, persisted as `order`). Ties (e.g. freshly-uploaded
- * photos that haven't been repositioned yet, all defaulting to the same
- * order) fall back to newest-first so new work is still visible immediately.
+ * Sorting rule: pinned photos always come first, regardless of likes/order.
+ * Within each tier (pinned / not), photos sort by like count descending.
+ * Ties (very common — e.g. several unliked photos) fall back to the
+ * admin-curated `order` (drag-and-drop in /admin) so that feature still
+ * means something once likes stop being the deciding factor, then to
+ * newest-first as a final tiebreaker.
  */
 export function sortPhotosForGallery<
-  T extends { pinned: boolean; order: number; createdAt: Date },
+  T extends { pinned: boolean; likeCount: number; order: number; createdAt: Date },
 >(photos: T[]): T[] {
   return [...photos].sort((a, b) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-    return a.order - b.order || b.createdAt.getTime() - a.createdAt.getTime();
+    return (
+      b.likeCount - a.likeCount ||
+      a.order - b.order ||
+      b.createdAt.getTime() - a.createdAt.getTime()
+    );
   });
 }

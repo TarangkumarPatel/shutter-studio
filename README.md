@@ -15,11 +15,9 @@ A cinematic, award-agency-style photography portfolio — built with Next.js 16
   caption overlaid directly on the photo, and comments/likes in a slide-in
   drawer rather than a permanent side panel — the photo stays the largest
   thing on screen).
-- **Gallery order is admin-curated**: pinned photos always sort first;
-  within each tier (pinned / not), photos display in the order set via
-  drag-and-drop in `/admin` (ties — e.g. a fresh upload not yet
-  repositioned — fall back to newest-first, and new uploads jump to the
-  front by default).
+- **Gallery order**: pinned photos always sort first, then by like count
+  descending. Ties fall back to the admin-curated drag-and-drop order in
+  `/admin`, then newest-first.
 - **/admin** — password-protected dashboard with two tabs: **Photos**
   (drag-and-drop upload with server-side processing/compression via `sharp`,
   a hamburger-handle drag-to-reorder list, inline title/description editing,
@@ -157,15 +155,13 @@ public/
 ### Sorting
 
 `src/lib/sorting.ts` sorts `pinned` photos first (toggled per-photo from
-`/admin`'s Photos tab, via `PATCH /api/admin/photos/[id]`), then by the
-`Photo.order` column — a plain integer the admin controls by dragging photos
-in `/admin`'s Photos tab (grip handle on each row; the new order is
-persisted via `PATCH /api/admin/photos/reorder` and reflected immediately on
-the gallery). Ties fall back to newest-first, so
-a freshly-uploaded photo (which defaults to one less than the current lowest
-`order`, i.e. the front of the list) still surfaces immediately even before
-it's been manually repositioned. This runs on every gallery/game page load —
-no cron job or cache to keep in sync.
+`/admin`'s Photos tab, via `PATCH /api/admin/photos/[id]`), then by
+`likeCount` descending. Ties (very common — most photos sit at the same
+like count) fall back to the admin-curated `Photo.order` column — dragged
+in `/admin`'s Photos tab, persisted via `PATCH /api/admin/photos/reorder`
+— so that feature still has an effect once likes aren't the deciding
+factor, and finally to newest-first. This runs on every gallery/game page
+load — no cron job or cache to keep in sync.
 
 ### Contact & messages
 
