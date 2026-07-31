@@ -65,7 +65,14 @@ export function storageKeyToFilePath(publicPath: string): string {
  */
 class VercelBlobStorageAdapter implements StorageAdapter {
   async save(key: string, buffer: Buffer): Promise<string> {
-    const blob = await put(key, buffer, { access: "public", addRandomSuffix: false });
+    // Copy into a plain, freshly-allocated Uint8Array rather than passing the
+    // Node Buffer as-is — @vercel/blob's put() sends this through fetch/undici
+    // under the hood, which is stricter about the backing ArrayBuffer than
+    // sharp's native binding was (observed in production: "ArrayBuffer:
+    // SharedArrayBuffer is not allowed", even though nothing here explicitly
+    // constructs a SharedArrayBuffer).
+    const bytes = Buffer.from(buffer);
+    const blob = await put(key, bytes, { access: "public", addRandomSuffix: false });
     return blob.url;
   }
 
