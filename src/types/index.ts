@@ -13,6 +13,7 @@ export interface PhotoDTO {
   likeCount: number;
   commentCount: number;
   order: number;
+  pinned: boolean;
   createdAt: string;
   isNew: boolean;
 }
@@ -48,6 +49,7 @@ export function toPhotoDTO(
     likeCount: photo.likeCount,
     commentCount: photo.commentCount ?? 0,
     order: photo.order,
+    pinned: photo.pinned,
     createdAt: photo.createdAt.toISOString(),
     isNew,
   };

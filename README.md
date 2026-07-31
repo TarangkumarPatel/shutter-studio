@@ -11,16 +11,20 @@ A cinematic, award-agency-style photography portfolio — built with Next.js 16
   the gallery. Plays once per browser session (`sessionStorage`), with a
   Skip button, an optional synthesized shutter-click sound, and full
   `prefers-reduced-motion` support.
-- **Masonry gallery** with a lightbox (Ken Burns zoom, like button with a
-  burst animation, comments — no account required).
-- **Gallery order is admin-curated**: photos display in the order set via
+- **Masonry gallery** with a lightbox (Ken Burns zoom, an Instagram-style
+  caption overlaid directly on the photo, and comments/likes in a slide-in
+  drawer rather than a permanent side panel — the photo stays the largest
+  thing on screen).
+- **Gallery order is admin-curated**: pinned photos always sort first;
+  within each tier (pinned / not), photos display in the order set via
   drag-and-drop in `/admin` (ties — e.g. a fresh upload not yet
   repositioned — fall back to newest-first, and new uploads jump to the
   front by default).
 - **/admin** — password-protected dashboard with two tabs: **Photos**
   (drag-and-drop upload with server-side processing/compression via `sharp`,
-  a hamburger-handle drag-to-reorder list, comment moderation, delete) and
-  **Messages** (contact-form submissions, with delete).
+  a hamburger-handle drag-to-reorder list, inline title/description editing,
+  pin-to-top, comment moderation, delete) and **Messages** (contact-form
+  submissions, with delete).
 - **/contact** — a contact form (name/email/message), rate-limited and
   sanitized server-side, stored in the database and surfaced in the admin
   Messages tab.
@@ -152,10 +156,12 @@ public/
 
 ### Sorting
 
-`src/lib/sorting.ts` sorts by the `Photo.order` column — a plain integer the
-admin controls by dragging photos in `/admin`'s Photos tab (grip handle on
-each row; the new order is persisted via `PATCH /api/admin/photos/reorder`
-and reflected immediately on the gallery). Ties fall back to newest-first, so
+`src/lib/sorting.ts` sorts `pinned` photos first (toggled per-photo from
+`/admin`'s Photos tab, via `PATCH /api/admin/photos/[id]`), then by the
+`Photo.order` column — a plain integer the admin controls by dragging photos
+in `/admin`'s Photos tab (grip handle on each row; the new order is
+persisted via `PATCH /api/admin/photos/reorder` and reflected immediately on
+the gallery). Ties fall back to newest-first, so
 a freshly-uploaded photo (which defaults to one less than the current lowest
 `order`, i.e. the front of the list) still surfaces immediately even before
 it's been manually repositioned. This runs on every gallery/game page load —

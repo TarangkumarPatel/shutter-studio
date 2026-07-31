@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { ReactLenis } from "lenis/react";
 
 export default function SmoothScrollProvider({
@@ -8,6 +9,7 @@ export default function SmoothScrollProvider({
 }: {
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
   // Must start `false` to match the server-rendered output exactly (the
   // server has no `window`, so it always renders the Lenis-wrapped tree).
   // Reading matchMedia() in a lazy initializer instead would make the
@@ -26,7 +28,11 @@ export default function SmoothScrollProvider({
     return () => query.removeEventListener("change", listener);
   }, []);
 
-  if (reducedMotion) {
+  // /admin is a data-heavy utility page (long, dynamically-growing photo
+  // list) — Lenis's momentum scroll adds no value there and was observed
+  // clipping how far the page could actually scroll, so it just uses native
+  // scrolling instead.
+  if (reducedMotion || pathname?.startsWith("/admin")) {
     return <>{children}</>;
   }
 

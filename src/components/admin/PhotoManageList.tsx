@@ -9,14 +9,21 @@ export default function PhotoManageList({
   photos,
   onDeletePhoto,
   onReorderPhotos,
+  onUpdatePhoto,
 }: {
   photos: PhotoDTO[];
   onDeletePhoto: (id: string) => void;
   onReorderPhotos: (photos: PhotoDTO[]) => void;
+  onUpdatePhoto: (photo: PhotoDTO) => void;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [pinningId, setPinningId] = useState<string | null>(null);
   // Live-preview order while dragging, as ids — null means "use `photos` as-is".
   const [dragOrderIds, setDragOrderIds] = useState<string[] | null>(null);
   const [savingOrder, setSavingOrder] = useState(false);
@@ -89,6 +96,49 @@ export default function PhotoManageList({
     }
   }
 
+  function startEdit(photo: PhotoDTO) {
+    setEditingId(photo.id);
+    setEditTitle(photo.title ?? "");
+    setEditDescription(photo.description ?? "");
+  }
+
+  async function handleEditSave(id: string) {
+    setEditSaving(true);
+    try {
+      const res = await fetch(`/api/admin/photos/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: editTitle, description: editDescription }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Couldn't save changes.");
+      onUpdatePhoto(data.photo);
+      setEditingId(null);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  async function handleTogglePin(photo: PhotoDTO) {
+    setPinningId(photo.id);
+    try {
+      const res = await fetch(`/api/admin/photos/${photo.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pinned: !photo.pinned }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Couldn't update pin.");
+      onUpdatePhoto(data.photo);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setPinningId(null);
+    }
+  }
+
   if (items.length === 0) {
     return (
       <p className="text-sm text-(--color-fg-subtle)">No photos yet — upload the first one above.</p>
@@ -152,6 +202,11 @@ export default function PhotoManageList({
             <div className="min-w-0 flex-1">
               <p className="font-medium text-(--color-fg) truncate">
                 {photo.title ?? "Untitled"}
+                {photo.pinned && (
+                  <span className="ml-2 px-1.5 py-0.5 text-[10px] tracking-widest uppercase rounded-full bg-(--color-accent) text-(--color-bg) font-semibold">
+                    Pinned
+                  </span>
+                )}
                 {photo.isNew && (
                   <span className="ml-2 px-1.5 py-0.5 text-[10px] tracking-widest uppercase rounded-full bg-(--color-accent)/15 text-(--color-accent-bright) border border-(--color-accent-dim)">
                     New
@@ -163,6 +218,28 @@ export default function PhotoManageList({
                 {photo.commentCount} comments
               </p>
             </div>
+
+            <button
+              type="button"
+              onClick={() => handleTogglePin(photo)}
+              disabled={pinningId === photo.id}
+              title={photo.pinned ? "Unpin" : "Pin to top"}
+              className={`shrink-0 px-3 py-1.5 text-xs rounded-full border transition-colors disabled:opacity-50 ${
+                photo.pinned
+                  ? "border-(--color-accent-dim) text-(--color-accent-bright) hover:bg-(--color-accent)/10"
+                  : "border-(--color-border) text-(--color-fg-muted) hover:text-(--color-fg) hover:border-(--color-accent-dim)"
+              }`}
+            >
+              {pinningId === photo.id ? "…" : photo.pinned ? "Unpin" : "Pin"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => startEdit(photo)}
+              className="shrink-0 px-3 py-1.5 text-xs rounded-full border border-(--color-border) text-(--color-fg-muted) hover:text-(--color-fg) hover:border-(--color-accent-dim) transition-colors"
+            >
+              Edit
+            </button>
 
             <button
               type="button"
@@ -181,6 +258,44 @@ export default function PhotoManageList({
               {deletingId === photo.id ? "Deleting…" : "Delete"}
             </button>
           </div>
+
+          {editingId === photo.id && (
+            <div className="border-t border-(--color-border) p-4 flex flex-col gap-2.5 bg-black/20">
+              <input
+                type="text"
+                placeholder="Title"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                maxLength={200}
+                className="w-full bg-(--color-bg-elevated-2) border border-(--color-border) rounded-lg px-3 py-2 text-sm text-(--color-fg) placeholder:text-(--color-fg-subtle) focus:outline-none focus:border-(--color-accent-dim) transition-colors"
+              />
+              <textarea
+                placeholder="Description"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                maxLength={2000}
+                rows={2}
+                className="w-full resize-none bg-(--color-bg-elevated-2) border border-(--color-border) rounded-lg px-3 py-2 text-sm text-(--color-fg) placeholder:text-(--color-fg-subtle) focus:outline-none focus:border-(--color-accent-dim) transition-colors"
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingId(null)}
+                  className="px-3 py-1.5 text-xs tracking-[0.15em] uppercase rounded-full border border-(--color-border) text-(--color-fg-muted) hover:text-(--color-fg) transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleEditSave(photo.id)}
+                  disabled={editSaving}
+                  className="px-3 py-1.5 text-xs tracking-[0.15em] uppercase rounded-full bg-(--color-accent) text-(--color-bg) hover:bg-(--color-accent-bright) transition-colors disabled:opacity-50"
+                >
+                  {editSaving ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </div>
+          )}
 
           {expandedId === photo.id && <AdminCommentPanel photoId={photo.id} />}
         </div>

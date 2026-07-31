@@ -45,23 +45,22 @@ export default function PhotoCard({
           />
         </motion.div>
 
-        {photo.isNew && (
-          <span className="absolute top-3 left-3 px-2 py-0.5 text-[10px] tracking-widest uppercase rounded-full bg-(--color-accent) text-(--color-bg) font-semibold shadow-lg">
-            New
-          </span>
-        )}
+        <div className="absolute top-3 left-3 flex gap-1.5">
+          {photo.pinned && (
+            <span className="px-2 py-0.5 text-[10px] tracking-widest uppercase rounded-full bg-(--color-accent) text-(--color-bg) font-semibold shadow-lg">
+              Pinned
+            </span>
+          )}
+          {photo.isNew && (
+            <span className="px-2 py-0.5 text-[10px] tracking-widest uppercase rounded-full bg-(--color-accent) text-(--color-bg) font-semibold shadow-lg">
+              New
+            </span>
+          )}
+        </div>
 
-        <motion.div
-          variants={{ rest: { opacity: 0 }, hover: { opacity: 1 } }}
-          transition={{ duration: 0.35 }}
-          className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent"
-        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
 
-        <motion.div
-          variants={{ rest: { opacity: 0, y: 8 }, hover: { opacity: 1, y: 0 } }}
-          transition={{ duration: 0.35 }}
-          className="absolute bottom-0 left-0 right-0 p-4 flex items-end justify-between gap-2"
-        >
+        <div className="absolute bottom-0 left-0 right-0 p-4 flex items-end justify-between gap-2">
           <span className="font-display italic text-white text-lg text-balance line-clamp-2">
             {photo.title ?? "Untitled"}
           </span>
@@ -71,7 +70,7 @@ export default function PhotoCard({
             </svg>
             {photo.likeCount}
           </span>
-        </motion.div>
+        </div>
       </motion.button>
     </motion.div>
   );

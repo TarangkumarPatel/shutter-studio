@@ -80,6 +80,9 @@ export default function AdminDashboard({
               photos={photos}
               onDeletePhoto={(id) => setPhotos((prev) => prev.filter((p) => p.id !== id))}
               onReorderPhotos={setPhotos}
+              onUpdatePhoto={(updated) =>
+                setPhotos((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
+              }
             />
           </div>
         </>
