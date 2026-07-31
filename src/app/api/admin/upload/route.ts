@@ -46,7 +46,11 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error("Image processing failed:", err);
     return NextResponse.json(
-      { error: "Couldn't process that image — is it a valid photo file?" },
+      {
+        error: "Couldn't process that image — is it a valid photo file?",
+        // Admin-only endpoint — safe to include the real cause for diagnostics.
+        detail: err instanceof Error ? err.message : String(err),
+      },
       { status: 400 },
     );
   }
