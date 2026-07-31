@@ -14,5 +14,11 @@ export default async function AdminPage() {
   }
 
   const [photos, messages] = await Promise.all([getGalleryPhotos(), getMessages()]);
-  return <AdminDashboard initialPhotos={photos} initialMessages={messages} />;
+  // Vercel's serverless functions cap request bodies at 4.5MB, so on Vercel
+  // (BLOB_READ_WRITE_TOKEN present) uploads go browser -> Blob directly
+  // instead of through our own route. See UploadForm.tsx.
+  const blobEnabled = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+  return (
+    <AdminDashboard initialPhotos={photos} initialMessages={messages} blobEnabled={blobEnabled} />
+  );
 }

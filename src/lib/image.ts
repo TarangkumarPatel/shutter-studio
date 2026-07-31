@@ -20,6 +20,49 @@ export function isAllowedImageType(mimeType: string): boolean {
   return ALLOWED_MIME.has(mimeType);
 }
 
+export interface WebVariant {
+  webBuffer: Buffer;
+  blurDataUrl: string;
+  width: number;
+  height: number;
+}
+
+/**
+ * Derives the web-optimized WebP (resized, compressed) and blur-up
+ * placeholder from an original image buffer — used by the Vercel Blob
+ * client-upload flow, where the original is already stored (uploaded
+ * directly from the browser) and only the web variant needs generating
+ * server-side.
+ */
+export async function deriveWebVariant(buffer: Buffer): Promise<WebVariant> {
+  const image = sharp(buffer, { failOn: "none" }).rotate();
+
+  const webBuffer = await image
+    .clone()
+    .resize({
+      width: WEB_MAX_DIMENSION,
+      height: WEB_MAX_DIMENSION,
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .webp({ quality: WEB_QUALITY })
+    .toBuffer();
+
+  const webMeta = await sharp(webBuffer).metadata();
+  if (!webMeta.width || !webMeta.height) {
+    throw new Error("Could not read processed image dimensions.");
+  }
+
+  const blurBuffer = await sharp(buffer)
+    .rotate()
+    .resize({ width: BLUR_WIDTH })
+    .webp({ quality: 40 })
+    .toBuffer();
+  const blurDataUrl = `data:image/webp;base64,${blurBuffer.toString("base64")}`;
+
+  return { webBuffer, blurDataUrl, width: webMeta.width, height: webMeta.height };
+}
+
 /**
  * Processes an uploaded image buffer into a web-optimized WebP (resized,
  * compressed — what the gallery serves) plus a preserved original, and

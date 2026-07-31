@@ -12,9 +12,11 @@ type Tab = "photos" | "messages";
 export default function AdminDashboard({
   initialPhotos,
   initialMessages,
+  blobEnabled,
 }: {
   initialPhotos: PhotoDTO[];
   initialMessages: MessageDTO[];
+  blobEnabled: boolean;
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("photos");
@@ -67,7 +69,10 @@ export default function AdminDashboard({
 
       {tab === "photos" ? (
         <>
-          <UploadForm onUploaded={(photo) => setPhotos((prev) => [photo, ...prev])} />
+          <UploadForm
+            blobEnabled={blobEnabled}
+            onUploaded={(photo) => setPhotos((prev) => [photo, ...prev])}
+          />
 
           <div className="flex flex-col gap-4">
             <h2 className="font-display italic text-xl text-(--color-fg)">Manage photos</h2>

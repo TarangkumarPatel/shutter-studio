@@ -1,15 +1,26 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { upload } from "@vercel/blob/client";
 import type { PhotoDTO } from "@/types";
 
-export default function UploadForm({ onUploaded }: { onUploaded: (photo: PhotoDTO) => void }) {
+const POLL_INTERVAL_MS = 1500;
+const POLL_MAX_ATTEMPTS = 12; // ~18s — sharp processing + DB write is normally well under this
+
+export default function UploadForm({
+  onUploaded,
+  blobEnabled,
+}: {
+  onUploaded: (photo: PhotoDTO) => void;
+  blobEnabled: boolean;
+}) {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -24,23 +35,59 @@ export default function UploadForm({ onUploaded }: { onUploaded: (photo: PhotoDT
     });
   }, []);
 
+  // The client-upload flow creates the Photo row asynchronously (Vercel Blob
+  // calls our server back once the browser -> Blob transfer completes), so
+  // there's nothing to synchronously return here — poll the public photos
+  // list for the row this upload produced, keyed by its original Blob URL.
+  async function waitForPhoto(originalUrl: string): Promise<PhotoDTO> {
+    for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
+      const res = await fetch("/api/photos", { cache: "no-store" });
+      const data = await res.json();
+      const match = (data.photos as PhotoDTO[] | undefined)?.find(
+        (p) => p.originalKey === originalUrl,
+      );
+      if (match) return match;
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    }
+    throw new Error(
+      "Upload finished but processing is taking longer than expected — refresh in a moment to check.",
+    );
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!file || uploading) return;
     setUploading(true);
+    setProcessing(false);
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      if (title.trim()) formData.append("title", title.trim());
-      if (description.trim()) formData.append("description", description.trim());
+      if (blobEnabled) {
+        // Browser -> Blob directly, bypassing Vercel's 4.5MB function body cap.
+        const blob = await upload(file.name, file, {
+          access: "public",
+          handleUploadUrl: "/api/admin/upload-blob",
+          clientPayload: JSON.stringify({
+            title: title.trim() || undefined,
+            description: description.trim() || undefined,
+          }),
+        });
+        setUploading(false);
+        setProcessing(true);
+        const photo = await waitForPhoto(blob.url);
+        onUploaded(photo);
+      } else {
+        const formData = new FormData();
+        formData.append("file", file);
+        if (title.trim()) formData.append("title", title.trim());
+        if (description.trim()) formData.append("description", description.trim());
 
-      const res = await fetch("/api/admin/upload", { method: "POST", body: formData });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Upload failed.");
+        const res = await fetch("/api/admin/upload", { method: "POST", body: formData });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Upload failed.");
+        onUploaded(data.photo);
+      }
 
-      onUploaded(data.photo);
       setSuccess(true);
       setTitle("");
       setDescription("");
@@ -50,6 +97,7 @@ export default function UploadForm({ onUploaded }: { onUploaded: (photo: PhotoDT
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setUploading(false);
+      setProcessing(false);
     }
   }
 
@@ -132,10 +180,10 @@ export default function UploadForm({ onUploaded }: { onUploaded: (photo: PhotoDT
         </div>
         <button
           type="submit"
-          disabled={!file || uploading}
+          disabled={!file || uploading || processing}
           className="shrink-0 px-5 py-2.5 rounded-full bg-(--color-accent) text-(--color-bg) font-medium text-sm hover:bg-(--color-accent-bright) transition-colors disabled:opacity-50"
         >
-          {uploading ? "Uploading…" : "Publish"}
+          {uploading ? "Uploading…" : processing ? "Processing…" : "Publish"}
         </button>
       </div>
     </form>
